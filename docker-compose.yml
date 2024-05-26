@@ -1,0 +1,116 @@
+services:
+  user_db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    volumes:
+      - pg_user_data:/var/lib/postgresql/data
+    env_file:
+      - ./user_service/.env
+    healthcheck:
+      test: [ "CMD-SHELL", "sh -c 'pg_isready -d postgres' || exit 1" ]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 1s
+  user_service:
+    build:
+      context: ./user_service
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./user_service/.env
+    depends_on:
+      user_db:
+        condition: service_healthy
+  user_service_consumer:
+    build:
+      context: ./user_service
+      dockerfile: Dockerfile.consumer
+    restart: unless-stopped
+    env_file:
+      - ./user_service/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  command_db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    volumes:
+      - pg_command_data:/var/lib/postgresql/data
+    env_file:
+      - ./.env
+    healthcheck:
+      test: [ "CMD-SHELL", "sh -c 'pg_isready -d postgres' || exit 1" ]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 1s
+  command_service:
+    build:
+      context: ./command_service
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./command_service/.env
+    depends_on:
+      command_db:
+        condition: service_healthy
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.4
+    container_name: zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    kafka:
+      image: confluentinc/cp-kafka:7.4.4
+      container_name: kafka
+      restart: unless-stopped
+      depends_on:
+        - zookeeper
+      ports:
+        - 9092:9092
+      environment:
+        KAFKA_BROKER_ID: 1
+        KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+        KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+        KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+    producer:
+      build:
+        context: ./message_relay
+        dockerfile: Dockerfile.producer
+      restart: unless-stopped
+      env_file:
+        - ./message_relay/.env
+      depends_on:
+        command_db:
+          condition: service_healthy
+        user_db:
+          condition: service_healthy
+        kafka:
+          condition: service_started
+    consumer:
+      build:
+        context: ./message_relay
+        dockerfile: Dockerfile.consumer
+      restart: unless-stopped
+      env_file:
+        - ./message_relay/.env
+      depends_on:
+        command_db:
+          condition: service_healthy
+        user_db:
+          condition: service_healthy
+        kafka:
+          condition: service_started
+
+volumes:
+  pg_user_data:
+  pg_command_data:
