@@ -1,4 +1,4 @@
-**<h1> Golang microservices that implement SAGA pattern with transactional outbox </h1>**
+**<h1> Golang microservices which implement SAGA transactional outbox pattern </h1>**
 
 ## About project
 **<h3> There are 2 microservices and 1 message relay (producer & consumer) </h3>**
